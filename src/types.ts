@@ -3,13 +3,21 @@ import type { Browser, BrowserContext, Page } from 'playwright';
 export interface BrowserInstance {
   id: number;
   browser: Browser;
-  context: BrowserContext;
+  contexts: Map<number, ContextInfo>;
   type: 'chrome' | 'edge' | 'firefox';
+}
+
+export interface ContextInfo {
+  id: number;
+  browserId: number;
+  context: BrowserContext;
+  label: string;
 }
 
 export interface PageInfo {
   id: number;
   browserId: number;
+  contextId: number;
   page: Page;
 }
 

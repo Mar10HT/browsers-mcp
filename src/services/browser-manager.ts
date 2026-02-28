@@ -1,5 +1,5 @@
 import { chromium, firefox, devices, type Browser, type BrowserContext, type Page } from 'playwright';
-import type { BrowserInstance, PageInfo, CapturedRequest, CapturedConsoleMessage } from '../types.js';
+import type { BrowserInstance, ContextInfo, PageInfo, CapturedRequest, CapturedConsoleMessage } from '../types.js';
 import { DEFAULT_VIEWPORT, MAX_CONSOLE_MESSAGES, MAX_NETWORK_REQUESTS } from '../constants.js';
 
 class BrowserManager {
@@ -11,6 +11,7 @@ class BrowserManager {
   private consoleMessages = new Map<number, CapturedConsoleMessage[]>();
 
   private nextBrowserId = 1;
+  private nextContextId = 1;
   private nextPageId = 1;
   private nextRequestId = 1;
   private nextMessageId = 1;
@@ -29,7 +30,7 @@ class BrowserManager {
     type: 'chrome' | 'edge' | 'firefox' = 'chrome',
     headless = false,
     viewport?: { width: number; height: number }
-  ): Promise<{ browserId: number; pageId: number }> {
+  ): Promise<{ browserId: number; contextId: number; pageId: number }> {
     let browser: Browser;
 
     if (type === 'firefox') {
@@ -39,18 +40,98 @@ class BrowserManager {
       browser = await chromium.launch({ headless, channel });
     }
 
-    const context = await browser.newContext({
+    const browserId = this.nextBrowserId++;
+    const instance: BrowserInstance = { id: browserId, browser, contexts: new Map(), type };
+    this.browsers.set(browserId, instance);
+
+    const { contextId, pageId } = await this.createContext(browserId, 'default', viewport);
+    return { browserId, contextId, pageId };
+  }
+
+  async createContext(
+    browserId: number,
+    label = 'default',
+    viewport?: { width: number; height: number }
+  ): Promise<{ contextId: number; pageId: number }> {
+    const instance = this.browsers.get(browserId);
+    if (!instance) throw new Error(`Browser ${browserId} not found`);
+
+    const context = await instance.browser.newContext({
       viewport: viewport ?? DEFAULT_VIEWPORT,
     });
 
-    const browserId = this.nextBrowserId++;
-    this.browsers.set(browserId, { id: browserId, browser, context, type });
+    const contextId = this.nextContextId++;
+    const contextInfo: ContextInfo = { id: contextId, browserId, context, label };
+    instance.contexts.set(contextId, contextInfo);
 
     const page = await context.newPage();
-    const pageId = this.registerPage(browserId, page);
+    const pageId = this.registerPage(browserId, contextId, page);
     this.activePageId = pageId;
 
-    return { browserId, pageId };
+    return { contextId, pageId };
+  }
+
+  async closeContext(contextId: number): Promise<void> {
+    const contextInfo = this.findContext(contextId);
+    if (!contextInfo) throw new Error(`Context ${contextId} not found`);
+
+    // Clean up pages belonging to this context
+    for (const [pageId, info] of this.pages) {
+      if (info.contextId === contextId) {
+        this.networkRequests.delete(pageId);
+        this.consoleMessages.delete(pageId);
+        this.pages.delete(pageId);
+        if (this.activePageId === pageId) {
+          this.activePageId = null;
+        }
+      }
+    }
+
+    await contextInfo.context.close();
+
+    const instance = this.browsers.get(contextInfo.browserId);
+    instance?.contexts.delete(contextId);
+
+    if (this.activePageId === null && this.pages.size > 0) {
+      this.activePageId = this.pages.keys().next().value!;
+    }
+  }
+
+  listContexts(browserId?: number): Array<{ id: number; browserId: number; label: string; pageCount: number }> {
+    const result: Array<{ id: number; browserId: number; label: string; pageCount: number }> = [];
+
+    for (const [, instance] of this.browsers) {
+      if (browserId !== undefined && instance.id !== browserId) continue;
+      for (const [, ctx] of instance.contexts) {
+        let pageCount = 0;
+        for (const [, page] of this.pages) {
+          if (page.contextId === ctx.id) pageCount++;
+        }
+        result.push({ id: ctx.id, browserId: instance.id, label: ctx.label, pageCount });
+      }
+    }
+    return result;
+  }
+
+  async createPage(contextId?: number): Promise<{ pageId: number }> {
+    let ctx: ContextInfo | undefined;
+
+    if (contextId !== undefined) {
+      ctx = this.findContext(contextId);
+      if (!ctx) throw new Error(`Context ${contextId} not found`);
+    } else {
+      // Use context of active page
+      if (this.activePageId === null) throw new Error('No active page. Specify a context_id.');
+      const activeInfo = this.pages.get(this.activePageId);
+      if (!activeInfo) throw new Error('Active page no longer exists.');
+      ctx = this.findContext(activeInfo.contextId);
+      if (!ctx) throw new Error('Active context no longer exists.');
+    }
+
+    const page = await ctx.context.newPage();
+    const pageId = this.registerPage(ctx.browserId, ctx.id, page);
+    this.activePageId = pageId;
+    return { pageId };
   }
 
   async closeBrowser(browserId: number): Promise<void> {
@@ -72,15 +153,22 @@ class BrowserManager {
     await instance.browser.close();
     this.browsers.delete(browserId);
 
-    // Set active page to first remaining page if any
     if (this.activePageId === null && this.pages.size > 0) {
       this.activePageId = this.pages.keys().next().value!;
     }
   }
 
-  private registerPage(browserId: number, page: Page): number {
+  private findContext(contextId: number): ContextInfo | undefined {
+    for (const [, instance] of this.browsers) {
+      const ctx = instance.contexts.get(contextId);
+      if (ctx) return ctx;
+    }
+    return undefined;
+  }
+
+  private registerPage(browserId: number, contextId: number, page: Page): number {
     const pageId = this.nextPageId++;
-    this.pages.set(pageId, { id: pageId, browserId, page });
+    this.pages.set(pageId, { id: pageId, browserId, contextId, page });
     this.networkRequests.set(pageId, []);
     this.consoleMessages.set(pageId, []);
 
@@ -149,7 +237,6 @@ class BrowserManager {
       });
     });
 
-    // Track page close
     page.on('close', () => {
       this.pages.delete(pageId);
       this.networkRequests.delete(pageId);
@@ -177,27 +264,15 @@ class BrowserManager {
     this.activePageId = pageId;
   }
 
-  listPages(): Array<{ id: number; browserId: number; url: string; title: string }> {
-    const result: Array<{ id: number; browserId: number; url: string; title: string }> = [];
-    for (const [id, info] of this.pages) {
-      result.push({
-        id,
-        browserId: info.browserId,
-        url: info.page.url(),
-        title: '',
-      });
-    }
-    return result;
-  }
-
   async listPagesWithTitles(): Promise<
-    Array<{ id: number; browserId: number; url: string; title: string; isActive: boolean }>
+    Array<{ id: number; browserId: number; contextId: number; url: string; title: string; isActive: boolean }>
   > {
     const result = [];
     for (const [id, info] of this.pages) {
       result.push({
         id,
         browserId: info.browserId,
+        contextId: info.contextId,
         url: info.page.url(),
         title: await info.page.title(),
         isActive: id === this.activePageId,
@@ -221,8 +296,7 @@ class BrowserManager {
   getPageContext(pageId: number): BrowserContext | undefined {
     const info = this.pages.get(pageId);
     if (!info) return undefined;
-    const browser = this.browsers.get(info.browserId);
-    return browser?.context;
+    return this.findContext(info.contextId)?.context;
   }
 
   async closeAll(): Promise<void> {
