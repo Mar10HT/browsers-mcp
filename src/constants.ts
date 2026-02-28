@@ -1,0 +1,8 @@
+export const MAX_HTML_LENGTH = 50_000;
+export const MAX_TEXT_LENGTH = 20_000;
+export const MAX_CONSOLE_MESSAGES = 500;
+export const MAX_NETWORK_REQUESTS = 1000;
+export const MAX_RESPONSE_BODY_LENGTH = 100_000;
+export const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
+export const DEFAULT_TIMEOUT = 30_000;
+export const DEFAULT_PAGE_SIZE = 50;
