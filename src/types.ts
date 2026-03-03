@@ -4,7 +4,7 @@ export interface BrowserInstance {
   id: number;
   browser: Browser;
   contexts: Map<number, ContextInfo>;
-  type: 'chrome' | 'edge' | 'firefox';
+  type: 'chrome' | 'edge' | 'firefox' | 'brave';
 }
 
 export interface ContextInfo {

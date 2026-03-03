@@ -27,7 +27,7 @@ class BrowserManager {
   }
 
   async launchBrowser(
-    type: 'chrome' | 'edge' | 'firefox' = 'chrome',
+    type: 'chrome' | 'edge' | 'firefox' | 'brave' = 'chrome',
     headless = false,
     viewport?: { width: number; height: number }
   ): Promise<{ browserId: number; contextId: number; pageId: number }> {
@@ -35,6 +35,13 @@ class BrowserManager {
 
     if (type === 'firefox') {
       browser = await firefox.launch({ headless });
+    } else if (type === 'brave') {
+      const executablePath = process.platform === 'win32'
+        ? 'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe'
+        : process.platform === 'darwin'
+          ? '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser'
+          : '/usr/bin/brave-browser';
+      browser = await chromium.launch({ headless, executablePath });
     } else {
       const channel = type === 'edge' ? 'msedge' : 'chrome';
       browser = await chromium.launch({ headless, channel });

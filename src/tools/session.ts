@@ -9,7 +9,7 @@ export function registerSessionTools(server: McpServer): void {
     'browser_launch',
     'Launch a browser instance (Chrome, Edge, or Firefox). Creates a default context and page.',
     {
-      browser: z.enum(['chrome', 'edge', 'firefox']).default('chrome').describe('Browser to launch'),
+      browser: z.enum(['chrome', 'edge', 'firefox', 'brave']).default('chrome').describe('Browser to launch'),
       headless: z.boolean().default(false).describe('Run in headless mode'),
       viewport_width: z.number().optional().describe('Viewport width in pixels'),
       viewport_height: z.number().optional().describe('Viewport height in pixels'),
