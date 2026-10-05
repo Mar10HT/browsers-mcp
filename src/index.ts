@@ -12,6 +12,7 @@ import { registerConsoleTools } from './tools/console.js';
 import { registerEvaluateTools } from './tools/evaluate.js';
 import { registerStorageTools } from './tools/storage.js';
 import { registerPerformanceTools } from './tools/performance.js';
+import { registerAccessibilityTools } from './tools/accessibility.js';
 
 const server = new McpServer({
   name: 'browsers-mcp-server',
@@ -28,6 +29,7 @@ registerConsoleTools(server);
 registerEvaluateTools(server);
 registerStorageTools(server);
 registerPerformanceTools(server);
+registerAccessibilityTools(server);
 
 // Clean up on exit
 process.on('SIGINT', async () => {
