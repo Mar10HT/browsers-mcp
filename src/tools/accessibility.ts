@@ -128,7 +128,14 @@ function collectFacts(node: Element): ElementFacts {
       width: Math.round(rect.width),
       height: Math.round(rect.height),
     },
-    visible: rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden',
+    // ponytail: covers bounding-box, visibility and opacity. Does not detect the
+    // clip-rect/overflow sr-only pattern (Tailwind .sr-only, Bootstrap .visually-hidden) —
+    // that needs checking this element's own overflow + clip-path, add if it matters.
+    visible:
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.visibility !== 'hidden' &&
+      parseFloat(style.opacity) > 0,
   };
 }
 
@@ -164,10 +171,11 @@ export async function auditAccessibility(page: Page): Promise<A11yViolation[]> {
     help: violation.help,
     helpUrl: violation.helpUrl,
     nodeCount: violation.nodes.length,
-    // ponytail: axe target is a frame path; joining assumes a single frame.
+    // ponytail: target can nest arbitrarily deep for shadow DOM (flat(Infinity)
+    // handles that); it's still a single-frame path, so this assumes no iframes.
     // Use frameLocator chaining if auditing inside iframes ever matters.
     nodes: violation.nodes.slice(0, MAX_AXE_NODES_PER_VIOLATION).map((node) => ({
-      selector: node.target.flat().join(' >> '),
+      selector: node.target.flat(Infinity).join(' >> '),
       html: node.html,
       failureSummary: node.failureSummary ?? '',
     })),

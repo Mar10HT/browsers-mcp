@@ -67,6 +67,7 @@ const FIXTURE = `<html lang="en"><head><title>fixture</title></head><body><main>
   <div id="focusable" tabindex="0">Focusable div</div>
   <div id="skipped" tabindex="-1">Not in tab order</div>
   <button id="hidden-btn" style="display:none">Hidden</button>
+  <button id="opacity-zero" style="opacity:0">Invisible via opacity</button>
   <p>Not interactive</p>
 </main></body></html>`;
 
@@ -80,8 +81,8 @@ describe('listInteractiveElements', () => {
   });
 
   it('enumerates interactive elements and skips the rest', () => {
-    assert.equal(result.total, 13);
-    assert.equal(result.returned, 13);
+    assert.equal(result.total, 14);
+    assert.equal(result.returned, 14);
     assert.equal(result.elements[0].name, 'Save');
     assert.equal(byName('Not a link'), undefined);
     assert.equal(byName('Not in tab order'), undefined);
@@ -107,6 +108,7 @@ describe('listInteractiveElements', () => {
 
   it('flags hidden elements as not visible', () => {
     assert.equal(byName('Hidden')?.visible, false);
+    assert.equal(byName('Invisible via opacity')?.visible, false);
     assert.equal(byName('Save')?.visible, true);
     assert.ok((byName('Save')?.boundingBox.width ?? 0) > 0);
   });
@@ -115,7 +117,7 @@ describe('listInteractiveElements', () => {
     const limited = await listInteractiveElements(page, 3);
     assert.equal(limited.returned, 3);
     assert.equal(limited.elements.length, 3);
-    assert.equal(limited.total, 13);
+    assert.equal(limited.total, 14);
   });
 
   it('returns selectors that resolve back to exactly one element', async () => {
