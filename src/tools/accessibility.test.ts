@@ -2,7 +2,9 @@ import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Page } from 'playwright';
 import { browserManager } from '../services/browser-manager.js';
+import { MAX_AXE_NODES_PER_VIOLATION } from '../constants.js';
 import {
+  auditAccessibility,
   listInteractiveElements,
   resolveRole,
   type InteractiveElementsResult,
@@ -127,5 +129,46 @@ describe('listInteractiveElements', () => {
   it('selector works through the path browser_click takes', async () => {
     await page.click(byName('Save')!.selector);
     assert.equal(await page.title(), 'clicked');
+  });
+});
+
+const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+const A11Y_FIXTURE = `<html lang="en"><head><title>a11y fixture</title></head><body><main>
+  <img src="${PIXEL}" alt="ok">
+  ${Array.from({ length: 8 }, (_, i) => `<img id="bad${i}" src="${PIXEL}">`).join('')}
+  <p style="color:#eeeeee;background:#ffffff">Low contrast text</p>
+</main></body></html>`;
+
+describe('auditAccessibility', () => {
+  let violations: Awaited<ReturnType<typeof auditAccessibility>>;
+  const imageAlt = () => violations.find((v) => v.id === 'image-alt');
+
+  before(async () => {
+    await page.setContent(A11Y_FIXTURE);
+    violations = await auditAccessibility(page);
+  });
+
+  it('detects seeded violations with the expected shape', () => {
+    const v = imageAlt();
+    assert.ok(v);
+    assert.equal(typeof v.description, 'string');
+    assert.ok(v.help.length > 0);
+    assert.ok(v.helpUrl.startsWith('https://'));
+    assert.ok(v.impact === null || typeof v.impact === 'string');
+    assert.ok(v.nodes[0].html.includes('<img'));
+    assert.ok(v.nodes[0].failureSummary.length > 0);
+  });
+
+  it('caps nodes per violation and reports the real count', () => {
+    assert.equal(imageAlt()?.nodeCount, 8);
+    assert.equal(imageAlt()?.nodes.length, MAX_AXE_NODES_PER_VIOLATION);
+  });
+
+  it('does not flag images that have alt text', () => {
+    assert.ok(imageAlt()?.nodes.every((n) => !n.html.includes('alt="ok"')));
+  });
+
+  it('node selectors resolve on the page', async () => {
+    assert.equal(await page.locator(imageAlt()!.nodes[0].selector).count(), 1);
   });
 });

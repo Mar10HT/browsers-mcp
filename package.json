@@ -10,9 +10,15 @@
     "dev": "tsc --watch",
     "test": "tsc && node --test dist/tools/accessibility.test.js"
   },
-  "keywords": ["mcp", "browser", "devtools", "playwright"],
+  "keywords": [
+    "mcp",
+    "browser",
+    "devtools",
+    "playwright"
+  ],
   "license": "MIT",
   "dependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "playwright": "^1.52.0",
     "zod": "^3.24.0"

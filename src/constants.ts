@@ -6,3 +6,4 @@ export const MAX_RESPONSE_BODY_LENGTH = 100_000;
 export const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
 export const DEFAULT_TIMEOUT = 30_000;
 export const DEFAULT_PAGE_SIZE = 50;
+export const MAX_AXE_NODES_PER_VIOLATION = 5;

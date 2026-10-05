@@ -1,9 +1,11 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Page } from 'playwright';
+import { AxeBuilder } from '@axe-core/playwright';
 import { browserManager } from '../services/browser-manager.js';
 import { jsonResult } from '../utils/formatters.js';
 import { handleToolError } from '../utils/errors.js';
+import { MAX_AXE_NODES_PER_VIOLATION } from '../constants.js';
 
 // The returned selector is `${INTERACTIVE_SELECTOR} >> nth=<i>`, where <i> is the
 // element's index in this very query, so it re-resolves to the same element.
@@ -47,6 +49,22 @@ export interface InteractiveElementsResult {
   total: number;
   returned: number;
   elements: InteractiveElement[];
+}
+
+export interface A11yViolationNode {
+  selector: string;
+  html: string;
+  failureSummary: string;
+}
+
+export interface A11yViolation {
+  id: string;
+  impact: string | null;
+  description: string;
+  help: string;
+  helpUrl: string;
+  nodeCount: number;
+  nodes: A11yViolationNode[];
 }
 
 interface ElementFacts {
@@ -136,6 +154,26 @@ export async function listInteractiveElements(
   return { total: handles.length, returned: elements.length, elements };
 }
 
+export async function auditAccessibility(page: Page): Promise<A11yViolation[]> {
+  const { violations } = await new AxeBuilder({ page }).analyze();
+
+  return violations.map((violation) => ({
+    id: violation.id,
+    impact: violation.impact ?? null,
+    description: violation.description,
+    help: violation.help,
+    helpUrl: violation.helpUrl,
+    nodeCount: violation.nodes.length,
+    // ponytail: axe target is a frame path; joining assumes a single frame.
+    // Use frameLocator chaining if auditing inside iframes ever matters.
+    nodes: violation.nodes.slice(0, MAX_AXE_NODES_PER_VIOLATION).map((node) => ({
+      selector: node.target.flat().join(' >> '),
+      html: node.html,
+      failureSummary: node.failureSummary ?? '',
+    })),
+  }));
+}
+
 export function registerAccessibilityTools(server: McpServer): void {
   server.tool(
     'browser_list_interactive',
@@ -147,6 +185,20 @@ export function registerAccessibilityTools(server: McpServer): void {
       try {
         const page = browserManager.getActivePage();
         return jsonResult(await listInteractiveElements(page, limit));
+      } catch (error) {
+        return handleToolError(error);
+      }
+    }
+  );
+
+  server.tool(
+    'browser_audit_a11y',
+    'Run an axe-core accessibility audit on the active page and return the violations',
+    {},
+    async () => {
+      try {
+        const page = browserManager.getActivePage();
+        return jsonResult({ violations: await auditAccessibility(page) });
       } catch (error) {
         return handleToolError(error);
       }
